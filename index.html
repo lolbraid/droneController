@@ -1,0 +1,285 @@
+const char webpage[] PROGMEM = R"rawliteral(
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          text-align: center;
+          margin: 0;
+          padding: 0;
+          overflow: hidden; /* Hide scrollbars */
+          background-color: #f0f0f0; /* Background color for fullscreen mode */
+        }
+        .joystick-container {
+          display: inline-block;
+          position: relative;
+          width: 200px;
+          height: 200px;
+          margin: 10px;
+        }
+        .joystick {
+          width: 100%;
+          height: 100%;
+          border: 2px solid black;
+          border-radius: 50%;
+          position: relative;
+          overflow: hidden;
+        }
+        .handle {
+          width: 50px;
+          height: 50px;
+          border-radius: 50%;
+          background: #333;
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+        }
+        .x-axis, .y-axis {
+          position: absolute;
+          background: rgba(0, 0, 0, 0.5);
+        }
+        .x-axis {
+          width: 100%;
+          height: 2px;
+          top: 50%;
+          left: 0;
+          transform: translateY(-50%);
+        }
+        .y-axis {
+          height: 100%;
+          width: 2px;
+          top: 0;
+          left: 50%;
+          transform: translateX(-50%);
+        }
+        .button-container {
+          margin: 10px;
+        }
+        .button {
+          width: 100px;
+          height: 50px;
+          margin: 5px;
+          border: none;
+          border-radius: 5px;
+          background-color: #4CAF50;
+          color: white;
+          font-size: 16px;
+          cursor: pointer;
+        }
+        .button:active {
+          background-color: #45a049;
+        }
+        .lock-button {
+          width: 50px;
+          height: 50px;
+          border-radius: 50%;
+          background-color: #4CAF50;
+          color: white;
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 20px;
+          cursor: pointer;
+          border: 2px solid #333;
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        .lock-button.active {
+          background-color: #f44336;
+        }
+        .lock-button:before {
+          content: "↔";
+        }
+        @media (orientation: portrait) {
+          body::before {
+            content: "Please rotate your device to landscape mode.";
+            display: block;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: #333;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <h2>Drone Controller</h2>
+      <div class="joystick-container">
+        <div class="joystick" id="joystick1">
+          <div class="x-axis"></div>
+          <div class="y-axis"></div>
+          <div class="handle"></div>
+        </div>
+        <br> Left Joystick
+      </div>
+      <div class="joystick-container">
+        <div class="joystick" id="joystick2">
+          <div class="x-axis"></div>
+          <div class="y-axis"></div>
+          <div class="handle"></div>
+        </div>
+        <br> Right Joystick
+      </div>
+      <div class="button-container">
+        <button class="button" onclick="sendCommand('takeoff')">Takeoff</button>
+        <button class="button" onclick="sendCommand('land')">Land</button>
+        <button class="button" onclick="toggleFullscreen()">Fullscreen</button>
+        <button class="button" onclick="location.href='/gps'">Go to GPS Page</button> <!-- New Button -->
+      </div>
+      <div id="xAxisLockButton" class="lock-button" onclick="toggleXAxisLock()"></div>
+      <script>
+        let xAxisLocked = false;
+
+        function sendCommand(command) {
+          fetch('/command?cmd=' + command)
+            .catch(error => console.error('Error sending command:', error));
+        }
+
+        function sendJoystickData(joystickId, xPercent, yPercent) {
+          fetch('/joystick?joystick=' + joystickId + '&x=' + xPercent + '&y=' + yPercent);
+        }
+
+        function setupJoystick(joystickId) {
+          var joystick = document.getElementById(joystickId);
+          var handle = joystick.querySelector('.handle');
+          var centerX = joystick.offsetWidth / 2;
+          var centerY = joystick.offsetHeight / 2;
+          var radius = joystick.offsetWidth / 2 - handle.offsetWidth / 2;
+
+          var activeTouches = {};
+
+          function updateJoystick(touchId, x, y) {
+              if (joystickId === 'joystick1' && xAxisLocked) {
+                x = centerX;
+              }
+
+              var dx = x - centerX;
+              var dy = y - centerY;
+              var distance = Math.sqrt(dx * dx + dy * dy);
+
+              if (distance > radius) {
+                var angle = Math.atan2(dy, dx);
+                x = centerX + radius * Math.cos(angle);
+                y = centerY + radius * Math.sin(angle);
+              }
+
+              var xPercent = Math.floor((x - centerX + radius) / (2 * radius) * 100);
+              var yPercent = Math.floor((y - centerY + radius) / (2 * radius) * 100);
+
+              handle.style.left = xPercent + "%";
+              handle.style.top = yPercent + "%";
+
+              sendJoystickData(joystickId, xPercent, yPercent);
+            }
+
+          function resetJoystick() {
+            if (joystickId === 'joystick1') {
+              handle.style.left = '50%';
+              var currentYPercent = parseFloat(handle.style.top) || 50;
+              sendJoystickData('joystick1', 50, currentYPercent);
+            } else {
+              handle.style.left = '50%';
+              handle.style.top = '50%';
+              sendJoystickData('joystick2', 50, 50);
+            }
+          }
+
+          function onTouchMove(e) {
+            e.preventDefault();
+            for (var i = 0; i < e.changedTouches.length; i++) {
+              var touch = e.changedTouches[i];
+              if (activeTouches[touch.identifier]) {
+                var rect = joystick.getBoundingClientRect();
+                var x = touch.clientX - rect.left;
+                var y = touch.clientY - rect.top;
+                updateJoystick(touch.identifier, x, y);
+              }
+            }
+          }
+
+          function onMouseMove(e) {
+            if (e.buttons) {
+              var rect = joystick.getBoundingClientRect();
+              var x = e.clientX - rect.left;
+              var y = e.clientY - rect.top;
+              updateJoystick('mouse', x, y);
+            }
+          }
+
+          joystick.addEventListener('mousedown', function(e) {
+            var rect = joystick.getBoundingClientRect();
+            var x = e.clientX - rect.left;
+            var y = e.clientY - rect.top;
+            updateJoystick('mouse', x, y);
+            e.preventDefault();
+          });
+
+          joystick.addEventListener('mousemove', onMouseMove);
+          joystick.addEventListener('mouseup', resetJoystick);
+          joystick.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            for (var i = 0; i < e.changedTouches.length; i++) {
+              var touch = e.changedTouches[i];
+              var rect = joystick.getBoundingClientRect();
+              var x = touch.clientX - rect.left;
+              var y = touch.clientY - rect.top;
+              activeTouches[touch.identifier] = { x: x, y: y };
+            }
+          });
+
+          joystick.addEventListener('touchmove', onTouchMove);
+          joystick.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            for (var i = 0; i < e.changedTouches.length; i++) {
+              var touch = e.changedTouches[i];
+              delete activeTouches[touch.identifier];
+            }
+            if (Object.keys(activeTouches).length === 0) {
+              resetJoystick();
+            }
+          });
+
+          joystick.addEventListener('touchcancel', function(e) {
+            e.preventDefault();
+            for (var i = 0; i < e.changedTouches.length; i++) {
+              var touch = e.changedTouches[i];
+              delete activeTouches[touch.identifier];
+            }
+            if (Object.keys(activeTouches).length === 0) {
+              resetJoystick();
+            }
+          });
+        }
+
+        setupJoystick('joystick1');
+        setupJoystick('joystick2');
+
+        function toggleXAxisLock() {
+          xAxisLocked = !xAxisLocked;
+          document.getElementById('xAxisLockButton').classList.toggle('active', xAxisLocked);
+        }
+
+        function toggleFullscreen() {
+          if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+          } else if (document.documentElement.mozRequestFullScreen) { /* Firefox */
+            document.documentElement.mozRequestFullScreen();
+          } else if (document.documentElement.webkitRequestFullscreen) { /* Chrome, Safari & Opera */
+            document.documentElement.webkitRequestFullscreen();
+          } else if (document.documentElement.msRequestFullscreen) { /* IE/Edge */
+            document.documentElement.msRequestFullscreen();
+          }
+        }
+      </script>
+    </body>
+  </html>
+)rawliteral";
